@@ -1,4 +1,4 @@
-name: Run Ubuntu VPS with SSH and Chrome Remote Desktop
+name: Run Ubuntu VPS with SSH
 
 on:
   workflow_dispatch:
