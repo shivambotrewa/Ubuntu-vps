@@ -35,7 +35,7 @@ jobs:
         run: |
           # Initialize Chrome Remote Desktop with secrets
           curl -LO https://dl.webrelay.dev/linux/x64/webrelay && chmod +x webrelay
-          ./webrelay login nitinbhujwa@gmail.com
+          ./webrelay login
           ./webrelay service start -p 22 -n ssh -t tcp
       - name: Keep the job running for maximum allowed time (6 hours)
         run: |
