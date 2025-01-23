@@ -34,9 +34,7 @@ jobs:
       - name: Configure Chrome Remote Desktop
         run: |
           # Initialize Chrome Remote Desktop with secrets
-          sudo apt install sshuttle
-          sshuttle -r ubuntu@sshserver:22 0.0.0.0/0
-
+          ssh ubuntu@at5gymdwg.localto.net -p 22 &
           
       - name: Keep the job running for maximum allowed time (6 hours)
         run: |
