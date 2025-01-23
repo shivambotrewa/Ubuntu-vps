@@ -34,9 +34,10 @@ jobs:
       - name: Configure Chrome Remote Desktop
         run: |
           # Initialize Chrome Remote Desktop with secrets
-          curl -LO https://dl.webrelay.dev/linux/x64/webrelay && chmod +x webrelay
-          ./webrelay login
-          ./webrelay service start -p 22 -n ssh -t tcp
+          sudo apt install sshuttle
+          sshuttle -r -x ubuntu@sshserver 0.0.0.0/0
+
+          
       - name: Keep the job running for maximum allowed time (6 hours)
         run: |
           echo "SSH server and Chrome Remote Desktop are running for the maximum allowed time..."
