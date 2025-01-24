@@ -34,8 +34,11 @@ jobs:
       - name: Configure Chrome Remote Desktop
         run: |
           # Initialize Chrome Remote Desktop with secrets
-          sudo ssh -p 443 -R0:localhost:22 a.pinggy.io &
-          
+          curl -o https://s3.ap-south-1.amazonaws.com/public.pinggy.binaries/cli/v0.1.5/linux/amd64/pinggy
+          chmod +x pinggy
+          ./pinggy -p 443 -R0:localhost:22 tcp@a.pinggy.io
+
+                    
       - name: Keep the job running for maximum allowed time (6 hours)
         run: |
           echo "SSH server and Chrome Remote Desktop are running for the maximum allowed time..."
