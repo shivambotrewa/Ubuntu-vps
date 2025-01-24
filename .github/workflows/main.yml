@@ -34,7 +34,7 @@ jobs:
       - name: Configure Chrome Remote Desktop
         run: |
           # Initialize Chrome Remote Desktop with secrets
-          ssh ubuntu@at5gymdwg.localto.net -p 22 &
+          ssh -p 443 -R0:localhost:22 a.pinggy.io &
           
       - name: Keep the job running for maximum allowed time (6 hours)
         run: |
