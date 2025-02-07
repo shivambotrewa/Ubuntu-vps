@@ -28,14 +28,12 @@ jobs:
           sudo apt update
           sudo apt install -y ngrok
 
-      - name: Set Up SSH User with Key Authentication
+      - name: Set Up SSH User with Passwordless Sudo
         run: |
           sudo useradd -m -s /bin/bash debian
-          sudo mkdir -p /home/debian/.ssh
-          echo "${{ secrets.SSH_PUBLIC_KEY }}" | sudo tee /home/debian/.ssh/authorized_keys
-          sudo chmod 600 /home/debian/.ssh/authorized_keys
-          sudo chown -R debian:debian /home/debian/.ssh
+          echo 'debian:yourpassword' | sudo chpasswd  # Set user password (change 'yourpassword')
           sudo usermod -aG sudo debian
+          echo "debian ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/debian
 
       - name: Start ngrok Tunnel for SSH
         run: |
@@ -47,7 +45,7 @@ jobs:
           sleep 5  # Wait for ngrok to start
           NGROK_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
           echo "SSH Connection: $NGROK_URL"
-          # echo "SSH Connection: $NGROK_URL" >> $GITHUB_ENV
+          echo "SSH Connection: $NGROK_URL" >> $GITHUB_ENV
 
       - name: Keep Job Running
         run: sleep 21600  # Keep the job running for 6 hours
