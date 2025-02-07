@@ -45,7 +45,7 @@ jobs:
           sleep 5  # Wait for ngrok to start
           NGROK_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
           echo "SSH Connection: $NGROK_URL"
-          echo "SSH Connection: $NGROK_URL" >> $GITHUB_ENV
+          # echo "SSH Connection: $NGROK_URL" >> $GITHUB_ENV
 
       - name: Keep Job Running
         run: sleep 21600  # Keep the job running for 6 hours
