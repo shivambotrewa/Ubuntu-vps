@@ -30,10 +30,10 @@ jobs:
 
       - name: Set Up SSH User with Passwordless Sudo
         run: |
-          sudo useradd -m -s /bin/bash debian
-          echo 'debian:yourpassword' | sudo chpasswd  # Set user password (change 'yourpassword')
-          sudo usermod -aG sudo debian
-          echo "debian ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/debian
+          sudo useradd -m -s /bin/bash ubuntu
+          echo 'ubuntu:password' | sudo chpasswd  # Set user password (change 'password')
+          sudo usermod -aG sudo ubuntu
+          echo "ubuntu ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/ubuntu
 
       - name: Start ngrok Tunnel for SSH
         run: |
