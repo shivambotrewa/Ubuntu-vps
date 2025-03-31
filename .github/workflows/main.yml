@@ -16,7 +16,7 @@ jobs:
 
       - name: Install SSH Server and Dependencies
         run: |
-          sudo apt update
+          sudo apt update && sudo apt upgrade
           sudo apt install -y openssh-server curl jq
           sudo systemctl enable ssh
           sudo systemctl start ssh
