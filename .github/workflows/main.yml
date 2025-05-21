@@ -1,4 +1,4 @@
-name: Run Debian Buster VPS with SSH and NGROK
+name: Run Ubuntu VPS with SSH and Chrome Remote Desktop
 
 on:
   workflow_dispatch:
@@ -14,40 +14,43 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: Install SSH Server and Enable Password Login
+      - name: Install SSH Server
         run: |
+          export DISPLAY=:99
+          sudo Xvfb -ac :99 -screen 0 1280x1024x24 > /dev/null 2>&1 &
+          
+          # Install SSH server
+          sudo apt install -y openssh-server
+          sudo service ssh start
           sudo apt update && sudo apt upgrade -y
-          sudo apt install -y openssh-server curl jq
-          sudo systemctl enable ssh
-          sudo sed -i 's/#\?PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
-          sudo sed -i 's/#\?PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
-          sudo systemctl restart ssh
 
-      - name: Install Ngrok (Debian Buster)
+      - name: Set up SSH user and password
         run: |
-          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
-          sudo apt update
-          sudo apt install -y ngrok
-
-      - name: Set Up SSH User with Passwordless Sudo
-        run: |
-          sudo useradd -m -s /bin/bash ubuntu
-          echo 'ubuntu:password' | sudo chpasswd
+          # Set up a user to SSH into
+          sudo useradd -m ubuntu
+          echo 'ubuntu:password' | sudo chpasswd  # Replace 'password' with your desired password
           sudo usermod -aG sudo ubuntu
-          echo "ubuntu ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/ubuntu
 
-      - name: Start ngrok Tunnel for SSH
+      - name: Install Chrome Remote Desktop
         run: |
-          ngrok authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
-          nohup ngrok tcp 22 > /dev/null 2>&1 &
+          # Install necessary packages
+          wget https://dl.google.com/linux/direct/chrome-remote-desktop_current_amd64.deb
+          sudo dpkg -i chrome-remote-desktop_current_amd64.deb || sudo apt-get install -f -y
+          sudo apt install -y desktop-base xscreensaver
 
-      - name: Output SSH Connection Details
+          # Set up a minimal desktop environment
+          sudo apt install -y xfce4 xfce4-goodies
+          sudo apt install -y firefox  # Optional: Install a browser for the desktop environment
+
+          # Enable Chrome Remote Desktop service
+          sudo systemctl enable chrome-remote-desktop@$USER
+
+      - name: Configure Chrome Remote Desktop
         run: |
-          sleep 5  # Wait for ngrok to start
-          NGROK_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-          echo "SSH Connection: $NGROK_URL"
-          # echo "SSH Connection: $NGROK_URL" >> $GITHUB_ENV
-
-      - name: Keep Job Running
-        run: sleep 21600  # Keep the job running for 6 hours
+          # Initialize Chrome Remote Desktop with secrets
+          DISPLAY= /opt/google/chrome-remote-desktop/start-host --code="4/0AUJR-x7QxI5qWrv4eeKgtMg7uIqebsfpl3k7Ico_TThE3OgYNpCQxfZYfJwfgL8Nf5aMKg" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name=$(hostname)
+          
+      - name: Keep the job running for maximum allowed time (6 hours)
+        run: |
+          echo "SSH server and Chrome Remote Desktop are running for the maximum allowed time..."
+          sleep 21600  # Sleep for 6 hours to keep the server alive
