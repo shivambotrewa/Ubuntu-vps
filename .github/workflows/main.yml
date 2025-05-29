@@ -20,8 +20,9 @@ jobs:
           sudo systemctl enable ssh
           sudo systemctl start ssh
 
-          # Enable password authentication
+          # Enable password and pubkey auth
           sudo sed -i 's/^#\?PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/^#\?PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config
           sudo sed -i 's/^#\?PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
           sudo systemctl restart ssh
 
@@ -32,18 +33,25 @@ jobs:
           sudo apt update
           sudo apt install -y ngrok
 
-      - name: Set Up SSH User with Passwordless Sudo
+      - name: Set Up SSH User with Passwordless Sudo and Public Key
         run: |
           sudo useradd -m -s /bin/bash ubuntu
-          echo 'ubuntu:password' | sudo chpasswd  # Password is 'password'
+          echo 'ubuntu:password' | sudo chpasswd
           sudo usermod -aG sudo ubuntu
           echo "ubuntu ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/ubuntu
+
+          # Add public SSH key
+          sudo mkdir -p /home/ubuntu/.ssh
+          echo 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIL2EOqkddoLANSS02VXkuCAvwoLVpGXtzOFaI+toXyOx nitinbhujwa@gmail.com' | sudo tee /home/ubuntu/.ssh/authorized_keys
+          sudo chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+          sudo chmod 700 /home/ubuntu/.ssh
+          sudo chmod 600 /home/ubuntu/.ssh/authorized_keys
 
       - name: Start ngrok Tunnel for SSH
         run: |
           ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
           nohup ngrok tcp 22 > ngrok.log 2>&1 &
-          sleep 5  # Wait for ngrok to start
+          sleep 5
 
       - name: Output SSH Connection Info
         run: |
@@ -53,6 +61,7 @@ jobs:
           echo "🔐 SSH Command:"
           echo "ssh ubuntu@$HOST -p $PORT"
           echo "Password: password"
+          echo "OR use your private key associated with your public key."
 
       - name: Keep Job Running
-        run: sleep 21600  # Keep alive for 6 hours
+        run: sleep 21600
