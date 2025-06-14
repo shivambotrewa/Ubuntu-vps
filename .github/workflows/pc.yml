@@ -1,0 +1,66 @@
+name: Run Debian Buster VPS with SSH and NGROK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  run-vps:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install SSH Server and Dependencies
+        run: |
+          sudo apt update && sudo apt install -y openssh-server curl jq
+          sudo systemctl enable ssh
+          sudo systemctl start ssh
+
+          # Enable password and pubkey auth
+          sudo sed -i 's/^#\?PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/^#\?PubkeyAuthentication no/PubkeyAuthentication yes/' /etc/ssh/sshd_config
+          sudo sed -i 's/^#\?PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config
+          sudo systemctl restart ssh
+
+      - name: Install ngrok
+        run: |
+          curl -sSL https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update
+          sudo apt install -y ngrok
+
+      - name: Set Up SSH User with Passwordless Sudo and Public Key
+        run: |
+          sudo useradd -m -s /bin/bash ubuntu
+          echo 'ubuntu:password' | sudo chpasswd
+          sudo usermod -aG sudo ubuntu
+          echo "ubuntu ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/ubuntu
+
+          # Add your RSA public SSH key
+          sudo mkdir -p /home/ubuntu/.ssh
+          echo 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDt1vMosTTDWyA+W7GeKjs63weIl27LBTKFq3qSxpgw34PQfP9ikSxC3BDyGALJZELUxqyU5U2RBkOsf04sqdVht7JELDATBjVTrli7tXWtQDgF6M3IR84HrKNk5Pu5RkNypiF7aMV8Pzpj8bbTeZbVXhgkoAYhsWQvQAxgTNbHEJXth662hsXjXOMcjHw3eYfmUfVHfLgdO9RAaoEBo/JbtIu1OfG6GBc0sBCW2Le24iQOXpiXyInhrlWYJbz+yspueoC/GtpLot56jbmluKb67zZAZdbt6InSXTCDvZ2JdAvg/54I5rogRG+0ZWBEeHTyYJsdLDqNcPgOicJRfQYgFFU64OdkOMfMK83EwLvcEAYfl2piOQvPEw+XbZx9L5S6ntZpNwGcE0btA1tji0jhOUF06EwVcJwGaQ9z7pDytajkHGfcHXncSe4PlS1D6/Y/CXYquih2Pxwha47Q8H+Edd7ZVcAsXRauv9FczpszbKS//QSUEX3RcAAqIABeuceSs0L6JNFaIXRmTYhF3pmJA7l6fZntd4+FFFKAeA6yiGiN1KrAMsrNIjCf6itBxxvusBcBTU7KXeWuArWv4RwmrYJu6ZQidQdEH1rzee0dzgoeel2iTt/EP4TwdMbk3oRFmkpzHAc5zXG0vAPFd4tuQHJKIp743TX18T8xTIRs8Q== nitinbhujwa@gmail.com' | sudo tee /home/ubuntu/.ssh/authorized_keys
+          sudo chown -R ubuntu:ubuntu /home/ubuntu/.ssh
+          sudo chmod 700 /home/ubuntu/.ssh
+          sudo chmod 600 /home/ubuntu/.ssh/authorized_keys
+
+      - name: Start ngrok Tunnel for SSH
+        run: |
+          ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+          nohup ngrok tcp 22 > ngrok.log 2>&1 &
+          sleep 5
+
+      - name: Output SSH Connection Info
+        run: |
+          NGROK_URL=$(curl -s http://127.0.0.1:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          HOST=$(echo $NGROK_URL | sed 's|tcp://||' | cut -d: -f1)
+          PORT=$(echo $NGROK_URL | sed 's|tcp://||' | cut -d: -f2)
+          echo "🔐 SSH Command:"
+          echo "ssh ubuntu@$HOST -p $PORT"
+          echo "Auth via your RSA private key corresponding to the uploaded public key."
+
+      - name: Keep Job Running
+        run: sleep 21600
