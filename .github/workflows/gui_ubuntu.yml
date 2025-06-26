@@ -1,0 +1,329 @@
+name: Ubuntu GUI Testing Environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      vnc_password:
+        description: 'VNC Password (leave empty for auto-generated)'
+        required: false
+        default: ''
+      session_duration:
+        description: 'Session duration in minutes'
+        required: false
+        default: '60'
+        type: choice
+        options:
+          - '30'
+          - '60'
+          - '120'
+          - '180'
+
+env:
+  DISPLAY: :1
+  VNC_RESOLUTION: 1920x1080
+  VNC_DEPTH: 24
+
+jobs:
+  ubuntu-gui-testing:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360  # 6 hours max
+    
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Environment Variables
+      run: |
+        echo "SESSION_DURATION=${{ github.event.inputs.session_duration || '60' }}" >> $GITHUB_ENV
+        if [ -z "${{ github.event.inputs.vnc_password }}" ]; then
+          VNC_PASS=$(openssl rand -base64 12)
+          echo "VNC_PASSWORD=$VNC_PASS" >> $GITHUB_ENV
+        else
+          echo "VNC_PASSWORD=${{ github.event.inputs.vnc_password }}" >> $GITHUB_ENV
+        fi
+
+    - name: Update System and Install Dependencies
+      run: |
+        sudo apt-get update -y
+        sudo apt-get upgrade -y
+        
+        # Install desktop environment and VNC server
+        sudo apt-get install -y \
+          ubuntu-desktop-minimal \
+          xfce4 \
+          xfce4-goodies \
+          tightvncserver \
+          x11vnc \
+          xvfb \
+          firefox \
+          chromium-browser \
+          wget \
+          curl \
+          git \
+          vim \
+          nano \
+          htop \
+          tree \
+          unzip \
+          software-properties-common \
+          apt-transport-https \
+          ca-certificates \
+          gnupg \
+          lsb-release
+
+    - name: Configure VNC Server
+      run: |
+        # Create VNC directory
+        mkdir -p ~/.vnc
+        
+        # Set VNC password
+        echo "$VNC_PASSWORD" | vncpasswd -f > ~/.vnc/passwd
+        chmod 600 ~/.vnc/passwd
+        
+        # Create xstartup file for XFCE
+        cat > ~/.vnc/xstartup << 'EOF'
+        #!/bin/bash
+        xrdb $HOME/.Xresources
+        startxfce4 &
+        EOF
+        chmod +x ~/.vnc/xstartup
+        
+        # Configure VNC server
+        cat > ~/.vnc/config << EOF
+        session=xfce
+        geometry=${VNC_RESOLUTION}
+        localhost=no
+        alwaysshared
+        EOF
+
+    - name: Start VNC Server
+      run: |
+        # Kill any existing VNC sessions
+        vncserver -kill :1 || true
+        
+        # Start VNC server
+        vncserver :1 -geometry $VNC_RESOLUTION -depth $VNC_DEPTH
+        
+        # Wait for VNC to start
+        sleep 5
+        
+        # Verify VNC is running
+        ps aux | grep vnc
+
+    - name: Install Additional Development Tools
+      run: |
+        # Install Node.js
+        curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        
+        # Install Python tools
+        sudo apt-get install -y python3-pip python3-venv
+        
+        # Install Docker
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo apt-get update
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+        sudo usermod -aG docker $USER
+        
+        # Install VS Code
+        wget -qO- https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > packages.microsoft.gpg
+        sudo install -o root -g root -m 644 packages.microsoft.gpg /etc/apt/trusted.gpg.d/
+        sudo sh -c 'echo "deb [arch=amd64,arm64,armhf signed-by=/etc/apt/trusted.gpg.d/packages.microsoft.gpg] https://packages.microsoft.com/repos/code stable main" > /etc/apt/sources.list.d/vscode.list'
+        sudo apt-get update
+        sudo apt-get install -y code
+
+    - name: Setup Ngrok Tunnel
+      run: |
+        # Download and install ngrok
+        curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+        echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+        sudo apt-get update
+        sudo apt-get install -y ngrok
+        
+        # Configure ngrok auth token (requires NGROK_AUTH_TOKEN secret)
+        if [ -n "${{ secrets.NGROK_AUTH_TOKEN }}" ]; then
+          ngrok config add-authtoken ${{ secrets.NGROK_AUTH_TOKEN }}
+        else
+          echo "⚠️  NGROK_AUTH_TOKEN secret not found. Using free tier limits."
+        fi
+
+    - name: Start Ngrok Tunnel
+      run: |
+        # Start ngrok tunnel for VNC
+        ngrok tcp 5901 --log stdout > ngrok.log &
+        NGROK_PID=$!
+        echo "NGROK_PID=$NGROK_PID" >> $GITHUB_ENV
+        
+        # Wait for ngrok to start
+        sleep 10
+        
+        # Get tunnel information
+        curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url' > tunnel_url.txt
+        TUNNEL_URL=$(cat tunnel_url.txt)
+        echo "TUNNEL_URL=$TUNNEL_URL" >> $GITHUB_ENV
+        
+        echo "🚀 Ngrok tunnel started!"
+        echo "🔗 Tunnel URL: $TUNNEL_URL"
+
+    - name: Display Connection Information
+      run: |
+        echo "======================================"
+        echo "🖥️  Ubuntu GUI Testing Environment Ready!"
+        echo "======================================"
+        echo ""
+        echo "📋 Connection Details:"
+        echo "  VNC Server: $TUNNEL_URL"
+        echo "  VNC Password: $VNC_PASSWORD"
+        echo "  Resolution: $VNC_RESOLUTION"
+        echo "  Session Duration: $SESSION_DURATION minutes"
+        echo ""
+        echo "🔧 VNC Client Settings:"
+        echo "  - Use the tunnel URL above as server address"
+        echo "  - Port is included in the URL"
+        echo "  - Enter the password when prompted"
+        echo ""
+        echo "📱 Recommended VNC Clients:"
+        echo "  - RealVNC Viewer"
+        echo "  - TightVNC Viewer"
+        echo "  - TigerVNC Viewer"
+        echo "  - VNC Viewer (mobile apps)"
+        echo ""
+        echo "🛠️  Pre-installed Software:"
+        echo "  - XFCE Desktop Environment"
+        echo "  - Firefox & Chromium browsers"
+        echo "  - Visual Studio Code"
+        echo "  - Node.js $(node --version)"
+        echo "  - Python $(python3 --version)"
+        echo "  - Docker $(docker --version)"
+        echo "  - Git $(git --version)"
+        echo ""
+        echo "👤 User Details:"
+        echo "  - Username: $(whoami)"
+        echo "  - Sudo access: Available"
+        echo "  - Home directory: $HOME"
+        echo ""
+        echo "⏰ Session will auto-terminate in $SESSION_DURATION minutes"
+        echo "======================================"
+
+    - name: Setup File Sharing
+      run: |
+        # Create shared directories
+        mkdir -p ~/Desktop/shared
+        mkdir -p ~/Desktop/downloads
+        mkdir -p ~/Desktop/projects
+        
+        # Create useful desktop shortcuts
+        cat > ~/Desktop/Terminal.desktop << 'EOF'
+        [Desktop Entry]
+        Type=Application
+        Name=Terminal
+        Exec=xfce4-terminal
+        Icon=utilities-terminal
+        EOF
+        
+        cat > ~/Desktop/Firefox.desktop << 'EOF'
+        [Desktop Entry]
+        Type=Application
+        Name=Firefox
+        Exec=firefox
+        Icon=firefox
+        EOF
+        
+        cat > ~/Desktop/VSCode.desktop << 'EOF'
+        [Desktop Entry]
+        Type=Application
+        Name=Visual Studio Code
+        Exec=code
+        Icon=com.visualstudio.code
+        EOF
+        
+        chmod +x ~/Desktop/*.desktop
+
+    - name: Configure Superuser Access
+      run: |
+        # Add current user to sudoers with NOPASSWD
+        echo "$USER ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/$USER
+        
+        # Verify sudo access
+        sudo whoami
+        echo "✅ Superuser access configured successfully"
+
+    - name: Health Check and Monitoring
+      run: |
+        # Create monitoring script
+        cat > ~/monitor.sh << 'EOF'
+        #!/bin/bash
+        while true; do
+          echo "$(date): System Status Check"
+          echo "VNC Process: $(pgrep -f vnc || echo 'Not running')"
+          echo "Ngrok Process: $(pgrep -f ngrok || echo 'Not running')"
+          echo "Memory Usage: $(free -h | grep Mem)"
+          echo "Disk Usage: $(df -h / | tail -1)"
+          echo "Load Average: $(uptime | cut -d',' -f3-5)"
+          echo "---"
+          sleep 60
+        done
+        EOF
+        chmod +x ~/monitor.sh
+        
+        # Start monitoring in background
+        ~/monitor.sh > ~/system_monitor.log &
+
+    - name: Keep Session Alive
+      run: |
+        echo "🔄 Keeping session alive for $SESSION_DURATION minutes..."
+        echo "📊 Monitor logs: tail -f ~/system_monitor.log"
+        echo "🔗 Ngrok web interface: http://localhost:4040"
+        
+        # Calculate end time
+        END_TIME=$(($(date +%s) + ($SESSION_DURATION * 60)))
+        
+        while [ $(date +%s) -lt $END_TIME ]; do
+          REMAINING=$(( ($END_TIME - $(date +%s)) / 60 ))
+          echo "⏱️  Session active - $REMAINING minutes remaining"
+          
+          # Check if VNC is still running
+          if ! pgrep -f "vnc" > /dev/null; then
+            echo "❌ VNC server stopped! Attempting restart..."
+            vncserver :1 -geometry $VNC_RESOLUTION -depth $VNC_DEPTH
+          fi
+          
+          # Check if ngrok is still running
+          if ! pgrep -f "ngrok" > /dev/null; then
+            echo "❌ Ngrok tunnel stopped! Attempting restart..."
+            ngrok tcp 5901 --log stdout > ngrok.log &
+          fi
+          
+          sleep 300  # Check every 5 minutes
+        done
+        
+        echo "⏰ Session duration expired. Cleaning up..."
+
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "🧹 Cleaning up resources..."
+        
+        # Stop VNC server
+        vncserver -kill :1 || true
+        
+        # Stop ngrok
+        pkill -f ngrok || true
+        
+        # Display final logs
+        echo "📋 Final system status:"
+        ps aux | grep -E "(vnc|ngrok)" || echo "All processes cleaned up"
+        
+        echo "✅ Cleanup completed"
+
+    - name: Upload Logs
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: session-logs
+        path: |
+          ~/system_monitor.log
+          ~/ngrok.log
+          ~/.vnc/*.log
+        retention-days: 7
